@@ -1,3 +1,11 @@
+/*
+*This class simulates an Ethernet learning switch.
+*Core algorithm:
+ *   Step1: Learn source MAC
+ *   Step2: If destination known -> forward
+ *   Step3: If unknown -> flood
+ */
+
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -7,10 +15,12 @@ public class VirtualSwitch {
     private final String id;
     private final ConfigParser cfg;
     private final DeviceInfo me;
-
+    // UDP socket
     private final DatagramSocket socket;
 
-    private final Map<String, InetSocketAddress> macTable = new HashMap<>();//邻居端口表
+    //MAC Learning Table
+    //MAC -> which port to send
+    private final Map<String, InetSocketAddress> macTable = new HashMap<>();//All neighbor ports (switch ports)邻居端口表
 
     private final Map<String, InetSocketAddress> neighborPorts = new HashMap<>();
 
@@ -35,14 +45,18 @@ public class VirtualSwitch {
                 + ", neighbors=" + neighborPorts.keySet());
     }
 
+
+
     private void printMacTable() {
         System.out.println("----- SWITCH " + id + " TABLE -----");
         for (Map.Entry<String, InetSocketAddress> e : macTable.entrySet()) {
             System.out.println(e.getKey() + " -> " + e.getValue().getAddress().getHostAddress() + ":" + e.getValue().getPort());
         }
         System.out.println("-----------------------------------");
-    }//打印表
+    }//print table打印表
 
+
+    //remember where the frame comes from
     private void learn(String srcMac, InetSocketAddress incomingPort) {
         if (!macTable.containsKey(srcMac)) {
             macTable.put(srcMac, incomingPort);
@@ -58,12 +72,16 @@ public class VirtualSwitch {
         }
     }//记住源地址
 
+
+    //Send frame out
     private void sendFrame(String frame, InetSocketAddress out) throws Exception {
         byte[] data = frame.getBytes(StandardCharsets.UTF_8);
         DatagramPacket pkt = new DatagramPacket(data, data.length, out.getAddress(), out.getPort());
         socket.send(pkt);
     }//打包发送
 
+
+    // receive -> learn -> forward/flood
     public void run() {
         byte[] buf = new byte[4096];
         while (true) {
