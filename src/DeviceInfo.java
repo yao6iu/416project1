@@ -1,8 +1,14 @@
+/*
+* A simple data model that represents one network device
+* In this project:
+    * IP + port = physical address (UDP socket address)
+*/
+
 public class DeviceInfo {
 
-    private String id;
-    private String ip;
-    private int port;
+    private String id;  //device id
+    private String ip;  //Ip address
+    private int port;  //UDP port
 
     public DeviceInfo(String id, String ip, int port) {
         this.id = id;

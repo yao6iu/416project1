@@ -1,3 +1,16 @@
+/*
+ * Simulates an Ethernet host.
+ * Responsibilities:
+ *   1. Send frames to its directly connected switch
+ *   2. Receive frames from switch
+ *   3. Interact with user (input message)
+
+ * IMPORTANT:
+ * Host NEVER sends packets directly to another host.
+ * All traffic must go through the switch (like real Ethernet).
+ */
+
+
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -5,8 +18,8 @@ import java.util.Scanner;
 //把从电脑输入的内容传给交换机
 public class VirtualHost {
 
-    private final String id;
-    private final ConfigParser cfg;//检查每个设备邻居是谁
+    private final String id; //host ID used as virtual MAC address主机ID，同时作为“虚拟MAC地址”
+    private final ConfigParser cfg;//configuration parser (topology info)解析配置文件,检查每个设备邻居是谁
     private final DeviceInfo me;//自己设备信息
 
     private final DatagramSocket socket;//udp负责发送接收
