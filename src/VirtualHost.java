@@ -15,19 +15,20 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Scanner;
-//把从电脑输入的内容传给交换机
+
+
 public class VirtualHost {
 
-    private final String id; //host ID used as virtual MAC address主机ID，同时作为“虚拟MAC地址”
-    private final ConfigParser cfg;//configuration parser (topology info)解析配置文件,检查每个设备邻居是谁
-    private final DeviceInfo me;//自己设备信息
+    private final String id; //host ID used as virtual MAC address
+    private final ConfigParser cfg;//configuration parser (topology info)
+    private final DeviceInfo me;//own information
 
-    private final DatagramSocket socket;//UDP socket used for sending and receiving frames,udp负责发送接收
+    private final DatagramSocket socket;//UDP socket used for sending and receiving frames
 
     // Directly connected switch
-    private final String neighborSwitchId;//交换机是谁
-    private final InetAddress neighborSwitchIp;//交换机udp地址
-    private final int neighborSwitchPort;//host发包地址
+    private final String neighborSwitchId;
+    private final InetAddress neighborSwitchIp;
+    private final int neighborSwitchPort;
 
 
     //initialize host and bind UDP socket
@@ -47,7 +48,7 @@ public class VirtualHost {
         DeviceInfo sw = cfg.getDevice(neighborSwitchId);
         if (sw == null) throw new Exception("Unknown neighbor switch id: " + neighborSwitchId);
 
-        // bind UDP socket绑定UDP端口
+        // bind UDP socket
         this.neighborSwitchIp = InetAddress.getByName(sw.getIp());
         this.neighborSwitchPort = sw.getPort();
 
@@ -55,7 +56,7 @@ public class VirtualHost {
         this.socket.bind(new InetSocketAddress(InetAddress.getByName(me.getIp()), me.getPort()));
         System.out.println("[HOST " + id + "] bound at " + me.getIp() + ":" + me.getPort()
                 + ", neighbor=" + neighborSwitchId + "(" + sw.getIp() + ":" + sw.getPort() + ")");
-    }//启动准备自己发包，邻居准备接受
+    }//Start ready to issue your own contract, and the neighbors are ready to accept it
 
 
     // Always listen for frames from switch.
@@ -95,7 +96,7 @@ public class VirtualHost {
         });
         t.setDaemon(true);
         t.start();
-    }//host准备接受和打印
+    }//host ready to accept and print
 
 
     //Read user input and send frame to switch
@@ -126,7 +127,7 @@ public class VirtualHost {
                 System.out.println("[HOST " + id + "][ERROR] send failed: " + e.getMessage());
             }
         }
-    }//wait等待用户输入
+    }//wait for user input
 
 
     public static void main(String[] args) throws Exception {

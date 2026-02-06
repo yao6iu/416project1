@@ -20,13 +20,13 @@ public class VirtualSwitch {
 
     //MAC Learning Table
     //MAC -> which port to send
-    private final Map<String, InetSocketAddress> macTable = new HashMap<>();//All neighbor ports (switch ports)邻居端口表
+    private final Map<String, InetSocketAddress> macTable = new HashMap<>();//All neighbor ports (switch ports)
 
     private final Map<String, InetSocketAddress> neighborPorts = new HashMap<>();
 
     public VirtualSwitch(String id, String configFile) throws Exception {
         this.id = id;
-        this.cfg = new ConfigParser(configFile);//读config表
+        this.cfg = new ConfigParser(configFile);//read config
 
         this.me = cfg.getDevice(id);
         if (me == null) throw new Exception("Unknown switch id: " + id);
@@ -46,14 +46,14 @@ public class VirtualSwitch {
     }
 
 
-
+    //print table
     private void printMacTable() {
         System.out.println("----- SWITCH " + id + " TABLE -----");
         for (Map.Entry<String, InetSocketAddress> e : macTable.entrySet()) {
             System.out.println(e.getKey() + " -> " + e.getValue().getAddress().getHostAddress() + ":" + e.getValue().getPort());
         }
         System.out.println("-----------------------------------");
-    }//print table打印表
+    }
 
 
     //remember where the frame comes from
@@ -70,15 +70,14 @@ public class VirtualSwitch {
                 printMacTable();
             }
         }
-    }//记住源地址
-
+    }
 
     //Send frame out
     private void sendFrame(String frame, InetSocketAddress out) throws Exception {
         byte[] data = frame.getBytes(StandardCharsets.UTF_8);
         DatagramPacket pkt = new DatagramPacket(data, data.length, out.getAddress(), out.getPort());
         socket.send(pkt);
-    }//打包发送
+    }
 
 
     // receive -> learn -> forward/flood
@@ -123,7 +122,7 @@ public class VirtualSwitch {
                 System.out.println("[SW " + id + "][ERROR] " + e.getMessage());
             }
         }
-    }//交换机接受，学习，发送循环
+    }
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
