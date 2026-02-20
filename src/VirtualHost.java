@@ -10,12 +10,10 @@
  * All traffic must go through the switch (like real Ethernet).
  */
 
-
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Scanner;
-
 
 public class VirtualHost {
 
@@ -30,17 +28,22 @@ public class VirtualHost {
     private final InetAddress neighborSwitchIp;
     private final int neighborSwitchPort;
 
+    private final String myVirtualIp;
+    private final String gatewayIp;
+    private final String gatewayMac;
 
     //initialize host and bind UDP socket
     public VirtualHost(String id, String configFile) throws Exception {
         this.id = id;
         this.cfg = new ConfigParser(configFile);
 
-        //get my address
         this.me = cfg.getDevice(id);
         if (me == null) throw new Exception("Unknown host id: " + id);
 
-        // a host should connect to exactly ONE switch
+        this.myVirtualIp = me.getVirtualIps().get(0);
+        this.gatewayIp = me.getGateway();
+        this.gatewayMac = gatewayIp.split("\\.")[1];
+
         List<String> nbs = cfg.getNeighbors(id);
         if (nbs.isEmpty()) throw new Exception("Host " + id + " has no neighbor in config");
         this.neighborSwitchId = nbs.get(0);
@@ -48,7 +51,6 @@ public class VirtualHost {
         DeviceInfo sw = cfg.getDevice(neighborSwitchId);
         if (sw == null) throw new Exception("Unknown neighbor switch id: " + neighborSwitchId);
 
-        // bind UDP socket
         this.neighborSwitchIp = InetAddress.getByName(sw.getIp());
         this.neighborSwitchPort = sw.getPort();
 
@@ -56,37 +58,36 @@ public class VirtualHost {
         this.socket.bind(new InetSocketAddress(InetAddress.getByName(me.getIp()), me.getPort()));
         System.out.println("[HOST " + id + "] bound at " + me.getIp() + ":" + me.getPort()
                 + ", neighbor=" + neighborSwitchId + "(" + sw.getIp() + ":" + sw.getPort() + ")");
-    }//Start ready to issue your own contract, and the neighbors are ready to accept it
+    }
 
 
-    // Always listen for frames from switch.
     private void startReceiverThread() {
         Thread t = new Thread(() -> {
             byte[] buf = new byte[4096];
             while (true) {
                 try {
                     DatagramPacket pkt = new DatagramPacket(buf, buf.length);
-                    //block until packet arrives
                     socket.receive(pkt);
-
 
                     String frame = new String(pkt.getData(), 0, pkt.getLength(), StandardCharsets.UTF_8);
 
-                    // Frame format: src:dst:msg
-                    String[] parts = frame.split(":", 3);
-                    if (parts.length < 3) {
+                    String[] parts = frame.split(":", 5);
+                    if (parts.length < 5) {
                         System.out.println("[HOST " + id + "][DEBUG] bad frame: " + frame);
                         continue;
                     }
-                    String src = parts[0];
-                    String dst = parts[1];
-                    String msg = parts[2];
 
-                    System.out.println("[HOST " + id + "] Received message from " + src + ": " + msg);
-                    // if not for me, it means flooding
-                    if (!dst.equals(id)) {
+                    String srcMac = parts[0];
+                    String dstMac = parts[1];
+                    String srcIp  = parts[2];
+                    String dstIp  = parts[3];
+                    String msg    = parts[4];
+
+                    System.out.println("[HOST " + id + "] Received message from " + srcIp + ": " + msg);
+
+                    if (!dstMac.equals(id)) {
                         System.out.println("[HOST " + id + "][DEBUG] MAC address mismatch (flooded frame). dst="
-                                + dst + ", me=" + id);
+                                + dstMac + ", me=" + id);
                     }
 
                 } catch (Exception e) {
@@ -96,28 +97,26 @@ public class VirtualHost {
         });
         t.setDaemon(true);
         t.start();
-    }//host ready to accept and print
+    }
 
 
-    //Read user input and send frame to switch
     private void runSendLoop() {
         Scanner sc = new Scanner(System.in);
         while (true) {
-            System.out.print("[HOST " + id + "] Enter: <DEST> <MESSAGE>  (e.g., D hello): ");
+            System.out.print("[HOST " + id + "] Enter: <DEST_IP> <MESSAGE>  (e.g., net3.D hello): ");
             String line = sc.nextLine().trim();
             if (line.isEmpty()) continue;
 
             int sp = line.indexOf(' ');
             if (sp < 0) {
-                System.out.println("Format error. Use: D hello");
+                System.out.println("Format error. Use: net3.D hello");
                 continue;
             }
 
-            String dst = line.substring(0, sp).trim();
+            String dstIp = line.substring(0, sp).trim();
             String msg = line.substring(sp + 1).trim();
 
-            // build Ethernet frame
-            String frame = id + ":" + dst + ":" + msg;
+            String frame = id + ":" + gatewayMac + ":" + myVirtualIp + ":" + dstIp + ":" + msg;
             try {
                 byte[] data = frame.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket pkt = new DatagramPacket(data, data.length, neighborSwitchIp, neighborSwitchPort);
@@ -127,7 +126,7 @@ public class VirtualHost {
                 System.out.println("[HOST " + id + "][ERROR] send failed: " + e.getMessage());
             }
         }
-    }//wait for user input
+    }
 
 
     public static void main(String[] args) throws Exception {
