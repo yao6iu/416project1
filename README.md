@@ -1,73 +1,84 @@
-README
+# CS416 Project 2 – Implementation of IP Forwarding
 
-This project implements a simple Ethernet learning switch system for CS416 Project 1.
+This project simulates a small internetwork using UDP sockets.
 
-Project Structure
-src/
-├── VirtualSwitch.java     // Virtual Ethernet switch implementation
-├── VirtualHost.java       // Virtual host implementation
-├── ConfigParser.java      // Parses configuration file
-├── DeviceInfo.java        // Stores device information (ID, IP, port)
-└── config.txt             // Network topology configuration
-README.md
+It includes:
+- Virtual Hosts
+- Ethernet Learning Switches
+- Virtual Routers
+- IP-based packet forwarding across multiple subnets
 
-Files included:
-Java source files in the src directory
-Configuration file used to describe switches, hosts, and links
+The system demonstrates how packets are forwarded across routers between different subnets.
 
-How to run:
-1. Open the project in IntelliJ IDEA.
-2. Make sure a JDK (Java 17 or higher) is configured.
-3. Create Run Configurations for Switches
-   Create three Application configurations:
-   Name: Switch S1
-   Main Class: VirtualSwitch
-   Program Arguments: S1
-   Name: Switch S2
-   Main Class: VirtualSwitch
-   Program Arguments: S2
-   Name: Switch S3
-   Main Class: VirtualSwitch
-   Program Arguments: S3
+---
 
-4. Create Run Configurations for Hosts
-   Create four Application configurations:
-   Name: Host A
-   Main Class: VirtualHost
-   Program Arguments: A
-   Name: Host B
-   Main Class: VirtualHost
-   Program Arguments: B
-   Name: Host C
-   Main Class: VirtualHost
-   Program Arguments: C
-   Name: Host D
-   Main Class: VirtualHost
-   Program Arguments: D
+## Network Topology
 
-5. Start the Programs,Run the programs in the following order:
-   Start all switches
-   Switch S1,Switch S2,Switch S3
-   Start all hosts
-   Host A,Host B,Host C,Host D
+There are three subnets:
 
-6.Testing
-In the Host A console, enter: D hello
-Expected behavior:
-Switches S1, S2, and S3 learn MAC address A and print their switch tables
-Host D prints:
-Received message from A: hello
-Hosts B and C print a MAC address mismatch debug message
-Host A does not receive the message back
-This demonstrates correct flooding and MAC learning behavior.
+Subnet 1:
+A, B -> S1 -> R1
 
-Each device will bind to its configured IP address and UDP port.
+Subnet 2:
+R1 -> S2 -> R2
 
-The configuration file must be present in the project directory so the program can read the network topology at runtime.
-To simulate multiple switches, run multiple instances of the program in IntelliJ, each with a different switch ID.
+Subnet 3:
+R2 -> S3 -> C, D
 
-Group members:
-Yuyang Xia
-Yuxin Li
-Yao Liu
-Bining Yang
+Routers:
+- R1 connects net1 and net2
+- R2 connects net2 and net3
+
+---
+
+## Frame Format
+
+Each frame contains five fields:
+
+SRC_MAC : DST_MAC : SRC_IP : DST_IP : MESSAGE
+
+Example:
+A:R1:net1.A:net3.D:hello
+
+---
+
+## How It Works
+
+1. A host sends a frame to its default gateway.
+2. The switch forwards the frame based on MAC learning.
+3. The router checks the destination subnet.
+4. The router rewrites the MAC address.
+5. The frame is forwarded to the next hop.
+6. The destination host receives and prints the message.
+
+---
+
+## How to Run
+
+Start each device separately with its ID as argument.
+
+Examples:
+
+VirtualSwitch S1
+VirtualSwitch S2
+VirtualSwitch S3
+
+VirtualRouter R1
+VirtualRouter R2
+
+VirtualHost A
+VirtualHost B
+VirtualHost C
+VirtualHost D
+
+Make sure switches and routers are started before hosts.
+
+---
+
+## Features Implemented
+
+- Layer 2 learning switch
+- Layer 3 IP forwarding
+- Router forwarding table
+- MAC address rewriting
+- Multi-hop routing across subnets
