@@ -4,7 +4,7 @@
  *   1. Send frames to its directly connected switch
  *   2. Receive frames from switch
  *   3. Interact with user (input message)
-
+ *
  * IMPORTANT:
  * Host NEVER sends packets directly to another host.
  * All traffic must go through the switch (like real Ethernet).
@@ -17,11 +17,11 @@ import java.util.Scanner;
 
 public class VirtualHost {
 
-    private final String id; //host ID used as virtual MAC address
-    private final ConfigParser cfg;//configuration parser (topology info)
-    private final DeviceInfo me;//own information
+    private final String id; // host ID used as virtual MAC address
+    private final ConfigParser cfg; // configuration parser (topology info)
+    private final DeviceInfo me; // own information
 
-    private final DatagramSocket socket;//UDP socket used for sending and receiving frames
+    private final DatagramSocket socket; // UDP socket used for sending and receiving frames
 
     // Directly connected switch
     private final String neighborSwitchId;
@@ -32,7 +32,7 @@ public class VirtualHost {
     private final String gatewayIp;
     private final String gatewayMac;
 
-    //initialize host and bind UDP socket
+    // initialize host and bind UDP socket
     public VirtualHost(String id, String configFile) throws Exception {
         this.id = id;
         this.cfg = new ConfigParser(configFile);
@@ -41,8 +41,8 @@ public class VirtualHost {
         if (me == null) throw new Exception("Unknown host id: " + id);
 
         this.myVirtualIp = me.getVirtualIps().get(0);
-        this.gatewayIp = me.getGateway();
-        this.gatewayMac = gatewayIp.split("\\.")[1];
+        this.gatewayIp = me.getGateway();               // e.g., "net1.R1"
+        this.gatewayMac = gatewayIp.split("\\.")[1];    // e.g., "R1"
 
         List<String> nbs = cfg.getNeighbors(id);
         if (nbs.isEmpty()) throw new Exception("Host " + id + " has no neighbor in config");
@@ -59,7 +59,6 @@ public class VirtualHost {
         System.out.println("[HOST " + id + "] bound at " + me.getIp() + ":" + me.getPort()
                 + ", neighbor=" + neighborSwitchId + "(" + sw.getIp() + ":" + sw.getPort() + ")");
     }
-
 
     private void startReceiverThread() {
         Thread t = new Thread(() -> {
@@ -83,12 +82,13 @@ public class VirtualHost {
                     String dstIp  = parts[3];
                     String msg    = parts[4];
 
-                    System.out.println("[HOST " + id + "] Received message from " + srcIp + ": " + msg);
-
                     if (!dstMac.equals(id)) {
                         System.out.println("[HOST " + id + "][DEBUG] MAC address mismatch (flooded frame). dst="
                                 + dstMac + ", me=" + id);
+                        continue;
                     }
+
+                    System.out.println("[HOST " + id + "] Received message from " + srcIp + ": " + msg);
 
                 } catch (Exception e) {
                     System.out.println("[HOST " + id + "][ERROR] receiver crashed: " + e.getMessage());
@@ -98,7 +98,6 @@ public class VirtualHost {
         t.setDaemon(true);
         t.start();
     }
-
 
     private void runSendLoop() {
         Scanner sc = new Scanner(System.in);
@@ -113,10 +112,28 @@ public class VirtualHost {
                 continue;
             }
 
-            String dstIp = line.substring(0, sp).trim();
+            String dstIp = line.substring(0, sp).trim();      // e.g., "net1.B" or "net3.D"
             String msg = line.substring(sp + 1).trim();
 
-            String frame = id + ":" + gatewayMac + ":" + myVirtualIp + ":" + dstIp + ":" + msg;
+            // Decide dst MAC:
+            // - same subnet: send directly to destination host (dst MAC = host ID, e.g., "B")
+            // - different subnet: send to gateway router (dst MAC = gatewayMac, e.g., "R1")
+            String mySubnet = myVirtualIp.split("\\.")[0];
+            String dstSubnet = dstIp.split("\\.")[0];
+
+            String dstMac = gatewayMac; // default: gateway
+            if (mySubnet.equals(dstSubnet)) {
+                String[] ipParts = dstIp.split("\\.");
+                if (ipParts.length >= 2) {
+                    dstMac = ipParts[1]; // net1.B -> B
+                } else {
+                    System.out.println("[HOST " + id + "][ERROR] bad destination IP: " + dstIp);
+                    continue;
+                }
+            }
+
+            String frame = id + ":" + dstMac + ":" + myVirtualIp + ":" + dstIp + ":" + msg;
+
             try {
                 byte[] data = frame.getBytes(StandardCharsets.UTF_8);
                 DatagramPacket pkt = new DatagramPacket(data, data.length, neighborSwitchIp, neighborSwitchPort);
@@ -127,7 +144,6 @@ public class VirtualHost {
             }
         }
     }
-
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
