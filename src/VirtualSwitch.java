@@ -8,7 +8,8 @@
 
 import java.net.*;
 import java.nio.charset.StandardCharsets;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Map;
 
 public class VirtualSwitch {
 
@@ -17,7 +18,7 @@ public class VirtualSwitch {
     private final DeviceInfo me;
     private final DatagramSocket socket;
 
-    // Learned table: MAC -> incoming UDP address (where we last saw that MAC)
+    // Learned table (kept for extensibility; not used by flooding logic)
     private final Map<String, InetSocketAddress> macTable = new HashMap<>();
 
     // Fixed ports: neighborId -> UDP address
@@ -69,6 +70,8 @@ public class VirtualSwitch {
                 InetSocketAddress incomingPort = new InetSocketAddress(pkt.getAddress(), pkt.getPort());
 
                 String frame = new String(pkt.getData(), 0, pkt.getLength(), StandardCharsets.UTF_8);
+
+                // Your frames are "srcMac:dstMac:rest..." so split at most 3 parts.
                 String[] parts = frame.split(":", 3);
                 if (parts.length < 3) {
                     System.out.println("[SW " + id + "][DEBUG] bad frame: " + frame);
@@ -80,31 +83,25 @@ public class VirtualSwitch {
 
                 System.out.println("[SW " + id + "] Received: " + frame);
 
-                // Learn where src lives
+                // Learn where src lives (optional; kept for future)
                 learn(src, incomingPort);
 
-                // Choose exactly one outgoing port (no flooding)
-                InetSocketAddress outPort = null;
+                // === FLOODING SWITCH (Project-2-friendly for demo rubric) ===
+                // Forward to ALL neighbors except the one we received from.
+                int sent = 0;
+                for (Map.Entry<String, InetSocketAddress> entry : neighborPorts.entrySet()) {
+                    InetSocketAddress outPort = entry.getValue();
 
-                // 1) Direct neighbor by ID (most reliable in this project)
-                if (neighborPorts.containsKey(dst)) {
-                    outPort = neighborPorts.get(dst);
-                } else {
-                    // 2) Learned entry
-                    outPort = macTable.get(dst);
+                    // No send-back to where it came from
+                    if (outPort.equals(incomingPort)) continue;
+
+                    sendFrame(frame, outPort);
+                    sent++;
                 }
 
-                if (outPort == null) {
-                    System.out.println("[SW " + id + "][DEBUG] Unknown dst=" + dst + " (drop, no flood)");
-                    continue;
+                if (sent == 0) {
+                    System.out.println("[SW " + id + "][DEBUG] Nothing to forward (all ports blocked?)");
                 }
-
-                // No send-back
-                if (outPort.equals(incomingPort)) {
-                    continue;
-                }
-
-                sendFrame(frame, outPort);
 
             } catch (Exception e) {
                 System.out.println("[SW " + id + "][ERROR] " + e.getMessage());
