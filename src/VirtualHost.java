@@ -132,7 +132,7 @@ public class VirtualHost {
                 }
             }
 
-            String frame = id + ":" + dstMac + ":" + myVirtualIp + ":" + dstIp + ":" + msg;
+            String frame = "DATA|" + id + ":" + dstMac + ":" + myVirtualIp + ":" + dstIp + ":" + msg;
 
             try {
                 byte[] data = frame.getBytes(StandardCharsets.UTF_8);

@@ -9,14 +9,17 @@ public class VirtualRouterDV {
     private final DeviceInfo me;
     private final DatagramSocket socket;
 
-    // DV construct
+    // Distance Vector: subnet -> cost
     private final Map<String, Integer> distanceVector = new HashMap<>();
+
+    // Next hop: subnet -> neighbor router
     private final Map<String, String> nextHop = new HashMap<>();
+
+    // Neighbor DV storage: neighbor -> its DV
     private final Map<String, Map<String, Integer>> neighborDV = new HashMap<>();
 
-    // neighborId -> UDP address
+    // Neighbor UDP ports
     private final Map<String, InetSocketAddress> neighborPorts = new HashMap<>();
-
 
     public VirtualRouterDV(String id, String configFile) throws Exception {
         this.id = id;
@@ -31,7 +34,7 @@ public class VirtualRouterDV {
                 me.getPort()
         ));
 
-        // Initialize the neighbor port
+        // Initialize neighbor ports
         for (String nb : cfg.getNeighbors(id)) {
             DeviceInfo d = cfg.getDevice(nb);
 
@@ -48,7 +51,7 @@ public class VirtualRouterDV {
         System.out.println("[ROUTER " + id + "] started. Neighbors=" + neighborPorts.keySet());
     }
 
-    //Initialize
+    // Initialize DV with directly connected subnets
     private void initDV() {
         for (String vip : me.getVirtualIps()) {
             String subnet = DeviceInfo.extractSubnet(vip);
@@ -60,8 +63,7 @@ public class VirtualRouterDV {
         System.out.println("[ROUTER " + id + "] Initial DV: " + distanceVector);
     }
 
-    //Periodic sending
-
+    // Periodically send DV to neighbors
     private void startDVThread() {
         new Thread(() -> {
             while (true) {
@@ -75,6 +77,7 @@ public class VirtualRouterDV {
         }).start();
     }
 
+    // Send DV packets to all neighbors
     private void sendDV() {
         StringBuilder sb = new StringBuilder();
 
@@ -96,15 +99,17 @@ public class VirtualRouterDV {
 
                 socket.send(pkt);
 
+                System.out.println("[ROUTER " + id + "] Sent DV to " + neighbor + ": " + payload);
+
             } catch (Exception e) {
                 e.printStackTrace();
             }
         }
     }
 
-    //Accept processing
-    private void handleDV(String frame) {
-        String content = frame.substring(3); // remove DV|
+    // Handle received DV packet
+    private void handleDV(String raw) {
+        String content = raw.substring(3); // remove "DV|"
         String[] parts = content.split(":", 5);
 
         String neighborId = parts[0];
@@ -122,16 +127,16 @@ public class VirtualRouterDV {
 
         neighborDV.put(neighborId, dv);
 
+        System.out.println("[ROUTER " + id + "] Received DV from " + neighborId + ": " + dv);
+
         recompute();
     }
 
-    //Bellman-Ford
-
+    // Bellman-Ford update
     private void recompute() {
         boolean updated = false;
 
         for (String neighbor : neighborDV.keySet()) {
-
             Map<String, Integer> dv = neighborDV.get(neighbor);
 
             for (String subnet : dv.keySet()) {
@@ -155,10 +160,10 @@ public class VirtualRouterDV {
         }
     }
 
-    //DATA forwarding
+    // Handle DATA packet forwarding
+    private void handleData(String raw, InetSocketAddress incomingAddr) throws Exception {
 
-    private void handleData(String frame, InetSocketAddress incomingAddr) throws Exception {
-
+        String frame = raw.substring(5); // remove "DATA|"
         String[] parts = frame.split(":", 5);
 
         String srcMac = parts[0];
@@ -167,7 +172,7 @@ public class VirtualRouterDV {
         String dstIp  = parts[3];
         String msg    = parts[4];
 
-        // Only the frames sent to you are processed
+        // Only process packets addressed to this router
         if (!dstMac.equals(id)) return;
 
         String dstSubnet = DeviceInfo.extractSubnet(dstIp);
@@ -179,25 +184,25 @@ public class VirtualRouterDV {
 
         String next = nextHop.get(dstSubnet);
 
-        // If it's a direct subnet
         String newDstMac;
         if (distanceVector.get(dstSubnet) == 0) {
-            // Directly to the target host
+            // Direct delivery to destination host
             newDstMac = dstIp.split("\\.")[1];
         } else {
+            // Forward to next-hop router
             newDstMac = next;
         }
 
-        // Prevent backposts
         InetSocketAddress outAddr = neighborPorts.get(next);
         if (outAddr == null) return;
 
+        // Prevent sending back to incoming port
         if (incomingAddr.getAddress().equals(outAddr.getAddress())
                 && incomingAddr.getPort() == outAddr.getPort()) {
             return;
         }
 
-        String newFrame = id + ":" + newDstMac + ":" + srcIp + ":" + dstIp + ":" + msg;
+        String newFrame = "DATA|" + id + ":" + newDstMac + ":" + srcIp + ":" + dstIp + ":" + msg;
 
         System.out.println("[ROUTER " + id + "] Forwarding to " + next + ": " + newFrame);
 
@@ -207,7 +212,6 @@ public class VirtualRouterDV {
 
         socket.send(pkt);
     }
-
 
     public void run() {
         byte[] buf = new byte[4096];
@@ -222,16 +226,10 @@ public class VirtualRouterDV {
 
                 String raw = new String(pkt.getData(), 0, pkt.getLength(), StandardCharsets.UTF_8);
 
-                // === DV包 ===
                 if (raw.startsWith("DV|")) {
                     handleDV(raw);
-                    continue;
-                }
-
-                // === DATA包 ===
-                if (raw.startsWith("DATA|")) {
-                    String frame = raw.substring(5);
-                    handleData(frame, incomingAddr);
+                } else if (raw.startsWith("DATA|")) {
+                    handleData(raw, incomingAddr);
                 }
 
             } catch (Exception e) {
@@ -240,7 +238,6 @@ public class VirtualRouterDV {
         }
     }
 
-    //main
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
             System.out.println("Usage: VirtualRouterDV <ID>");
@@ -248,9 +245,7 @@ public class VirtualRouterDV {
         }
 
         String id = args[0];
-        VirtualRouterDV router = new VirtualRouterDV(id, "C:\\Users\\Asus\\Desktop\\CS416\\CS416project2\\416project2\\src\\config.txt");
+        VirtualRouterDV router = new VirtualRouterDV(id, "D:\\LEUCE\\llqdownload\\CS416Project3\\CS416project3\\416project2\\src\\config.txt");
         router.run();
     }
-
-
 }
