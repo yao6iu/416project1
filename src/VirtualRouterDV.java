@@ -15,6 +15,8 @@ public class VirtualRouterDV {
     // Next hop: subnet -> neighbor router
     private final Map<String, String> nextHop = new HashMap<>();
 
+    private final Map<String, String> directOutNeighbor = new HashMap<>();
+
     // Neighbor DV storage: neighbor -> its DV
     private final Map<String, Map<String, Integer>> neighborDV = new HashMap<>();
 
@@ -46,9 +48,40 @@ public class VirtualRouterDV {
         }
 
         initDV();
+        initDirectOutNeighbor();
         startDVThread();
 
         System.out.println("[ROUTER " + id + "] started. Neighbors=" + neighborPorts.keySet());
+    }
+
+    private void initDirectOutNeighbor() {
+
+        for (String subnet : distanceVector.keySet()) {
+            for (String nb : cfg.getNeighbors(id)) {
+                DeviceInfo d = cfg.getDevice(nb);
+                if (d == null) continue;
+
+                for (String vip : d.getVirtualIps()) {
+                    String nbSubnet = DeviceInfo.extractSubnet(vip);
+                    if (subnet.equals(nbSubnet)) {
+                        directOutNeighbor.put(subnet, nb);
+                    }
+                }
+            }
+        }
+
+        for (String nb : cfg.getNeighbors(id)) {
+            if (nb.startsWith("S")) {
+                for (String vip : me.getVirtualIps()) {
+                    String subnet = DeviceInfo.extractSubnet(vip);
+                    if (subnet.equals("net1") || subnet.equals("net2") || subnet.equals("net3")) {
+                        directOutNeighbor.put(subnet, nb);
+                    }
+                }
+            }
+        }
+
+        System.out.println("[ROUTER " + id + "] directOutNeighbor = " + directOutNeighbor);
     }
 
     // Initialize DV with directly connected subnets
@@ -184,17 +217,29 @@ public class VirtualRouterDV {
 
         String next = nextHop.get(dstSubnet);
 
+        String outNeighborId;
         String newDstMac;
+
         if (distanceVector.get(dstSubnet) == 0) {
-            // Direct delivery to destination host
+            // direct subnet
             newDstMac = dstIp.split("\\.")[1];
+            outNeighborId = directOutNeighbor.get(dstSubnet);
         } else {
-            // Forward to next-hop router
+            // remote subnet
             newDstMac = next;
+            outNeighborId = next;
         }
 
-        InetSocketAddress outAddr = neighborPorts.get(next);
-        if (outAddr == null) return;
+        if (outNeighborId == null) {
+            System.out.println("[ROUTER " + id + "] No outgoing neighbor for " + dstSubnet);
+            return;
+        }
+
+        InetSocketAddress outAddr = neighborPorts.get(outNeighborId);
+        if (outAddr == null) {
+            System.out.println("[ROUTER " + id + "] No UDP port for neighbor " + outNeighborId);
+            return;
+        }
 
         // Prevent sending back to incoming port
         if (incomingAddr.getAddress().equals(outAddr.getAddress())
@@ -204,7 +249,7 @@ public class VirtualRouterDV {
 
         String newFrame = "DATA|" + id + ":" + newDstMac + ":" + srcIp + ":" + dstIp + ":" + msg;
 
-        System.out.println("[ROUTER " + id + "] Forwarding to " + next + ": " + newFrame);
+        System.out.println("[ROUTER " + id + "] Forwarding to " + outNeighborId + ": " + newFrame);
 
         byte[] data = newFrame.getBytes(StandardCharsets.UTF_8);
         DatagramPacket pkt = new DatagramPacket(data, data.length,
@@ -245,7 +290,7 @@ public class VirtualRouterDV {
         }
 
         String id = args[0];
-        VirtualRouterDV router = new VirtualRouterDV(id, "D:\\LEUCE\\llqdownload\\CS416Project3\\CS416project3\\416project2\\src\\config.txt");
+        VirtualRouterDV router = new VirtualRouterDV(id, "E:\\study\\cs416\\project\\project3\\CS416project3\\416project2\\src\\config.txt");
         router.run();
     }
 }
