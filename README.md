@@ -1,119 +1,106 @@
-# CS416 Project 2 – Implementation of IP Forwarding
+CS416 Project 3 – Dynamic Routing (Distance Vector)
+1. Project Overview
+   This project implements a dynamic routing protocol for a virtual network.
+   Unlike Project 2, routers no longer use hardcoded forwarding tables.
+   Instead, each router automatically computes routes using the Distance Vector (DV) algorithm.
+   Key features:
+   1)Dynamic route learning
+   2)Automatic next-hop selection
+   3)Subnet-based routing
+   4)No flooding at the router level
 
-This project simulates a small internetwork using UDP sockets.
+2. Network Configuration
+   The network is defined in config.txt.
+   The topology includes:
+   3 host subnets: net1, net2, net3
+   7 transit subnets connecting routers
+   Total: 10 subnets
+   Each device is connected via switches and routers according to the assignment topology.
 
-It includes:
-- Virtual Hosts
-- Ethernet Learning Switches
-- Virtual Routers
-- IP-based forwarding across multiple subnets
+3. Routing Protocol (Distance Vector)
+   Each router maintains:
+   distanceVector: subnet → cost
+   nextHop: subnet → next router
+   Algorithm:
+   1.Initialize:
+   Directly connected subnets → cost = 0
+   2.Periodically send DV to neighbors
+   3.Upon receiving DV:
+   Apply Bellman-Ford:
+   newCost = neighborCost + 1
+   4.Update routing table if shorter path is found
 
-The system demonstrates how packets travel from one subnet to another through routers.
+4. Packet Types
+   Two types of packets are used:
+   (1) DATA packets
+   DATA|srcMac:dstMac:srcIP:dstIP:message
+   Used for user communication.
 
----
+(2) DV packets
+DV|routerID|subnet=cost,...
+Used for routing updates between routers.
 
-## Network Topology
+5. Routing Behavior
+   (1)Routers forward packets based on destination subnet
+   (2)If destination is directly connected:
+   Send to corresponding switch/host
+   (3)Otherwise:
+   Forward to next-hop router
+   The router never floods packets
 
-There are three subnets:
+6. How to Run
+   Open multiple terminals (or laptops if required):
 
-Subnet 1:
-A, B → S1 → R1
+Step 1: Compile
+javac *.java
 
-Subnet 2:
-R1 → R2
+Step 2: Start switches
+java VirtualSwitch S1
+java VirtualSwitch S2
+java VirtualSwitch S3
 
-Subnet 3:
-R2 → S2 → C, D
+Step 3: Start routers
+java VirtualRouterDV R1
+java VirtualRouterDV R2
+java VirtualRouterDV R3
+java VirtualRouterDV R4
+java VirtualRouterDV R5
+java VirtualRouterDV R6
+Step 4: Start hosts
+java VirtualHost A
+java VirtualHost B
+java VirtualHost C
 
-Devices in the system:
+Step 5: Wait for convergence
+Wait ~5–10 seconds for DV to stabilize.
 
-Switches:
-- S1
-- S2
-
-Routers:
-- R1
-- R2
-
-Hosts:
-- A
-- B
-- C
-- D
-
----
-
-## Frame Format
-
-All frames use the following format:
-
-SRC_MAC:DST_MAC:SRC_IP:DST_IP:MESSAGE
-
+Step 6: Send messages
 Example:
+net2.B hello
+net3.C test
 
-A:R1:net1.A:net3.D:hello
+7. Demo Scenarios
 
-Fields:
+Test 1: A → B
+Expected path:
+R1 → R3
+Expected:
+(1)Only R1 and R3 print forwarding logs
+(2)Host B receives message
 
-- SRC_MAC → Virtual MAC (device ID)
-- DST_MAC → Next-hop MAC
-- SRC_IP → Virtual IP
-- DST_IP → Destination virtual IP
-- MESSAGE → Payload
+Test 2: A → C
+Expected path:
+R1 → R2 → R4 → R6
+Test 3: C → B
+Possible paths:
+R6 → R4 → R5 → R3
+OR
+R6 → R4 → R2 → R3
 
----
-
-## Forwarding Logic
-
-1. A host sends a frame to its default gateway.
-2. The switch forwards the frame using MAC learning.
-3. The router checks the destination subnet.
-4. The router rewrites MAC addresses.
-5. The frame is forwarded to the next hop.
-6. The destination host receives and prints the message.
-
----
-
-## Router Forwarding Tables
-
-R1:
-- net1 → DIRECT
-- net2 → DIRECT
-- net3 → via net2.R2
-
-R2:
-- net3 → DIRECT
-- net2 → DIRECT
-- net1 → via net2.R1
-
----
-
-## How to Run
-
-Start each device separately using its ID.
-
-Switches:
-VirtualSwitch S1
-VirtualSwitch S2
-
-Routers:
-VirtualRouter R1
-VirtualRouter R2
-
-Hosts:
-VirtualHost A
-VirtualHost B
-VirtualHost C
-VirtualHost D
-
-Make sure switches and routers are started before hosts.
-
----
-
-## Features Implemented
-
-- Ethernet learning switch (Layer 2)
-- IP forwarding (Layer 3)
-- MAC address rewriting at routers
-- Multi-hop routing
-- Cross-subnet communication
+8. Notes
+   (1)All links have cost = 1
+   (2)No failures assumed
+   (3)DV updates every 2 seconds
+   (4)Routing convergence required before testing
+9. Contribution
+   All group members(Yuyang Xia, Yuxin Li, Yao Liu, Bining Yang)contributed to design, implementation, and testing.

@@ -1,6 +1,7 @@
 /*
-*This class simulates an Ethernet learning switch.
-*Core algorithm:
+ * This class simulates an Ethernet learning switch.
+ *
+ * Core algorithm:
  *   Step1: Learn source MAC
  *   Step2: If destination known -> forward
  *   Step3: If unknown -> flood
@@ -18,10 +19,10 @@ public class VirtualSwitch {
     private final DeviceInfo me;
     private final DatagramSocket socket;
 
-    // Learned table (kept for extensibility; not used by flooding logic)
+    // MAC table: MAC -> port
     private final Map<String, InetSocketAddress> macTable = new HashMap<>();
 
-    // Fixed ports: neighborId -> UDP address
+    // neighborId -> UDP address
     private final Map<String, InetSocketAddress> neighborPorts = new HashMap<>();
 
     public VirtualSwitch(String id, String configFile) throws Exception {
@@ -31,31 +32,50 @@ public class VirtualSwitch {
         this.me = cfg.getDevice(id);
         if (me == null) throw new Exception("Unknown switch id: " + id);
 
-        this.socket = new DatagramSocket(null);
-        this.socket.bind(new InetSocketAddress(InetAddress.getByName(me.getIp()), me.getPort()));
+        this.socket = new DatagramSocket(me.getPort());
 
         for (String nb : cfg.getNeighbors(id)) {
             DeviceInfo d = cfg.getDevice(nb);
-            if (d == null) throw new Exception("Unknown neighbor id in config: " + nb);
+            if (d == null) throw new Exception("Unknown neighbor: " + nb);
 
-            InetSocketAddress addr = new InetSocketAddress(InetAddress.getByName(d.getIp()), d.getPort());
-            neighborPorts.put(nb, addr);
+            neighborPorts.put(nb,
+                    new InetSocketAddress(
+                            InetAddress.getByName(d.getIp()),
+                            d.getPort()
+                    ));
         }
 
-        System.out.println("[SW " + id + "] bound at " + me.getIp() + ":" + me.getPort()
-                + ", neighbors=" + neighborPorts.keySet());
+        System.out.println("[SW " + id + "] started at " + me.getIp() + ":" + me.getPort());
+        System.out.println("[SW " + id + "] neighbors = " + neighborPorts.keySet());
     }
 
-    private void learn(String srcMac, InetSocketAddress incomingPort) {
+    private void learn(String srcMac, InetSocketAddress port) {
         InetSocketAddress old = macTable.get(srcMac);
-        if (old == null || !old.equals(incomingPort)) {
-            macTable.put(srcMac, incomingPort);
+
+        if (old == null || !old.equals(port)) {
+            macTable.put(srcMac, port);
+            System.out.println("[SW " + id + "] Learned MAC " + srcMac + " -> " + port);
+            printTable();
+        }
+    }
+
+    private void printTable() {
+        System.out.println("[SW " + id + "] MAC Table:");
+        for (Map.Entry<String, InetSocketAddress> e : macTable.entrySet()) {
+            System.out.println("   " + e.getKey() + " -> " + e.getValue());
         }
     }
 
     private void sendFrame(String frame, InetSocketAddress out) throws Exception {
+
+        System.out.println("[SW " + id + "] Sending to " + out + " : " + frame);
+
         byte[] data = frame.getBytes(StandardCharsets.UTF_8);
-        DatagramPacket pkt = new DatagramPacket(data, data.length, out.getAddress(), out.getPort());
+        DatagramPacket pkt = new DatagramPacket(
+                data, data.length,
+                out.getAddress(),
+                out.getPort()
+        );
         socket.send(pkt);
     }
 
@@ -67,41 +87,45 @@ public class VirtualSwitch {
                 DatagramPacket pkt = new DatagramPacket(buf, buf.length);
                 socket.receive(pkt);
 
-                InetSocketAddress incomingPort = new InetSocketAddress(pkt.getAddress(), pkt.getPort());
+                InetSocketAddress incomingPort =
+                        new InetSocketAddress(pkt.getAddress(), pkt.getPort());
 
                 String frame = new String(pkt.getData(), 0, pkt.getLength(), StandardCharsets.UTF_8);
 
-                // Your frames are "srcMac:dstMac:rest..." so split at most 3 parts.
-                String[] parts = frame.split(":", 3);
-                if (parts.length < 3) {
-                    System.out.println("[SW " + id + "][DEBUG] bad frame: " + frame);
+                if (!frame.startsWith("DATA|")) {
+                    System.out.println("[SW " + id + "] Invalid frame: " + frame);
                     continue;
                 }
 
-                String src = parts[0];
-                String dst = parts[1];
+                String payload = frame.substring(5);
+
+                String[] parts = payload.split(":", 5);
+                if (parts.length < 5) {
+                    System.out.println("[SW " + id + "] Bad frame: " + frame);
+                    continue;
+                }
+
+                String srcMac = parts[0];
+                String dstMac = parts[1];
 
                 System.out.println("[SW " + id + "] Received: " + frame);
 
-                // Learn where src lives (optional; kept for future)
-                learn(src, incomingPort);
+                // Step 2: 学习
+                learn(srcMac, incomingPort);
 
-                // === FLOODING SWITCH (Project-2-friendly for demo rubric) ===
-                // Forward to ALL neighbors except the one we received from.
+                // Project 3：still use flooding
                 int sent = 0;
+
                 for (Map.Entry<String, InetSocketAddress> entry : neighborPorts.entrySet()) {
-                    InetSocketAddress outPort = entry.getValue();
+                    InetSocketAddress out = entry.getValue();
 
-                    // No send-back to where it came from
-                    if (outPort.equals(incomingPort)) continue;
+                    if (out.equals(incomingPort)) continue;
 
-                    sendFrame(frame, outPort);
+                    sendFrame(frame, out);
                     sent++;
                 }
 
-                if (sent == 0) {
-                    System.out.println("[SW " + id + "][DEBUG] Nothing to forward (all ports blocked?)");
-                }
+                System.out.println("[SW " + id + "] Flooded to " + sent + " ports");
 
             } catch (Exception e) {
                 System.out.println("[SW " + id + "][ERROR] " + e.getMessage());
@@ -116,7 +140,9 @@ public class VirtualSwitch {
         }
 
         String id = args[0];
-        VirtualSwitch sw = new VirtualSwitch(id, "src/config.txt");
+
+        VirtualSwitch sw = new VirtualSwitch(id, "config.txt");
+
         sw.run();
     }
 }
